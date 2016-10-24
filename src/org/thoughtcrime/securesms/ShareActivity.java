@@ -38,8 +38,12 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import org.thoughtcrime.securesms.crypto.MasterSecret;
+import org.thoughtcrime.securesms.database.DatabaseFactory;
+import org.thoughtcrime.securesms.database.ThreadDatabase;
 import org.thoughtcrime.securesms.mms.PartAuthority;
 import org.thoughtcrime.securesms.providers.PersistentBlobProvider;
+import org.thoughtcrime.securesms.recipients.RecipientFactory;
+import org.thoughtcrime.securesms.recipients.RecipientProvider;
 import org.thoughtcrime.securesms.recipients.Recipients;
 import org.thoughtcrime.securesms.util.DynamicLanguage;
 import org.thoughtcrime.securesms.util.DynamicTheme;
@@ -229,6 +233,19 @@ public class ShareActivity extends PassphraseRequiredActionBarActivity
     @Override
     protected void onPostExecute(Uri uri) {
       resolvedExtra = uri;
+      if ( getIntent().hasExtra("isDirectShare") ) {
+        Intent directShareIntent = getIntent();
+        Long threadId = directShareIntent.getLongExtra(ThreadDatabase.ID, -1L);
+
+        if (threadId != -1L) {
+          int distributionType = directShareIntent.getIntExtra(ThreadDatabase.TYPE, ThreadDatabase.DistributionTypes.DEFAULT);
+          Recipients threadRecipients = DatabaseFactory.getThreadDatabase(ShareActivity.this).getRecipientsForThreadId(threadId);
+
+          if (threadRecipients != null) {
+            createConversation(threadId, threadRecipients, distributionType);
+          }
+        }
+      }
       ViewUtil.fadeIn(fragmentContainer, 300);
       ViewUtil.fadeOut(progressWheel, 300);
     }
