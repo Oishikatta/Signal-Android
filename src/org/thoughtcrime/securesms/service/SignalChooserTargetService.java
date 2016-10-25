@@ -6,12 +6,18 @@ import android.content.IntentFilter;
 import android.database.Cursor;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
+import android.os.Build;
 import android.os.Bundle;
 import android.service.chooser.ChooserTarget;
 import android.service.chooser.ChooserTargetService;
+import android.util.Log;
 
 import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.ShareActivity;
+import org.thoughtcrime.securesms.color.MaterialColor;
+import org.thoughtcrime.securesms.contacts.avatars.ContactColors;
+import org.thoughtcrime.securesms.contacts.avatars.ContactPhoto;
+import org.thoughtcrime.securesms.contacts.avatars.ContactPhotoFactory;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
 import org.thoughtcrime.securesms.database.ThreadDatabase;
 import org.thoughtcrime.securesms.recipients.Recipient;
@@ -22,7 +28,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-@TargetApi(23)
+@TargetApi(Build.VERSION_CODES.M)
 public class SignalChooserTargetService extends ChooserTargetService {
   private static final String TAG = SignalChooserTargetService.class.getSimpleName();
 
@@ -36,11 +42,6 @@ public class SignalChooserTargetService extends ChooserTargetService {
     ThreadDatabase threadDatabase = DatabaseFactory.getThreadDatabase(this);
     Cursor conversationList = threadDatabase.getConversationList();
 
-    if (conversationList.getCount() < 1) {
-      conversationList.close();
-      return targets;
-    }
-
     if (conversationList.moveToFirst()) {
       do {
         Long threadID = conversationList.getLong(
@@ -50,45 +51,66 @@ public class SignalChooserTargetService extends ChooserTargetService {
         int distributionType = conversationList.getInt(
             conversationList.getColumnIndex(ThreadDatabase.TYPE));
 
+        Bundle extras = new Bundle();
+        extras.putBoolean("isDirectShare", true);
+        extras.putLong(ThreadDatabase.ID, threadID);
+        extras.putInt(ThreadDatabase.TYPE, distributionType);
+
+        StringBuilder displayName = new StringBuilder();
+        ContactPhoto contactPhoto = ContactPhotoFactory.getDefaultContactPhoto(null);
+        MaterialColor contactPhotoColor = ContactColors.UNKNOWN_COLOR;
+
         Iterator<Recipient> recipientIterator = RecipientFactory.getRecipientsForIds(this, recipientIds, false).iterator();
-        while (recipientIterator.hasNext()) {
+
+        for (int recipientIdx = 0; recipientIterator.hasNext(); recipientIdx++) {
           Recipient currentRecipient = recipientIterator.next();
+          String recipientDisplayName = currentRecipient.getName();
 
-          Bundle extras = new Bundle();
-          extras.putBoolean("isDirectShare", true);
-          extras.putLong(ThreadDatabase.ID, threadID);
-          extras.putInt(ThreadDatabase.TYPE, distributionType);
-
-          String displayName = currentRecipient.getName();
-
-          if (displayName == null) {
-            displayName = currentRecipient.getNumber();
+          if (recipientDisplayName == null) {
+            recipientDisplayName = currentRecipient.getNumber();
           }
 
-          Drawable d = currentRecipient.getContactPhoto()
-              .asDrawable(this, currentRecipient.getColor().toConversationColor(this), false);
-          int largeIconTargetSize = this.getResources().getDimensionPixelSize(R.dimen.contact_photo_target_size);
-          Icon targetDisplayIcon = Icon.createWithBitmap(
-              BitmapUtil.createFromDrawable(d, largeIconTargetSize, largeIconTargetSize));
+          displayName.append(recipientDisplayName);
 
-          targets.add(
-              new ChooserTarget(
-                  displayName,
-                  targetDisplayIcon,
-                  1.0f,
-                  componentName,
-                  extras
-              )
-          );
-
-          if (targets.size() >= 8) {
-            break;
+          if (recipientIterator.hasNext()) {
+            displayName.append(", ");
           }
+
+          if (recipientIdx == 0 && !recipientIterator.hasNext()) {
+            contactPhoto = currentRecipient.getContactPhoto();
+            contactPhotoColor = currentRecipient.getColor();
+          } else if (recipientIdx == 1) {
+            contactPhoto = ContactPhotoFactory.getDefaultGroupPhoto();
+            contactPhotoColor = currentRecipient.getColor();
+          }
+        }
+
+        targets.add(
+            new ChooserTarget(
+                displayName,
+                getIconFromContactPhoto(contactPhoto, contactPhotoColor),
+                1.0f,
+                componentName,
+                extras
+            )
+        );
+
+        if (targets.size() >= 8) {
+          break;
         }
       } while (conversationList.moveToNext());
     }
 
     conversationList.close();
     return targets;
+  }
+
+  private Icon getIconFromContactPhoto (ContactPhoto contactPhoto, MaterialColor contactPhotoColor) {
+    Drawable d = contactPhoto.asDrawable(this, contactPhotoColor.toConversationColor(this));
+    int largeIconTargetSize = this.getResources().getDimensionPixelSize(R.dimen.contact_photo_target_size);
+
+    return Icon.createWithBitmap(
+            BitmapUtil.createFromDrawable(d, largeIconTargetSize, largeIconTargetSize)
+        );
   }
 }
